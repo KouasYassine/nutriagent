@@ -1,0 +1,15 @@
+# Raw datasets
+data/raw/nutrition5k/
+
+# Model checkpoints
+*.pth
+
+# Python generated files
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+/nutriagent/
+*.zip
