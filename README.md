@@ -33,7 +33,7 @@ Three ways to build a 90% range were compared, all calibrated on the validation 
 |---|---|---|---|---|
 | Fixed width (absolute score) | 89.1% | 98.3% | 89.7% | **79.3%** |
 | Width scaled with portion (relative score) | 86.5% | **77.8%** | 90.5% | 91.4% |
-| **Calibrated per portion size (Mondrian)** | _see `results/uncertainty/coverage.md`_ | | | |
+| **Calibrated per portion size (Mondrian)** | **88.0%** | **86.3%** | **88.8%** | **88.8%** | **272 kcal** | **86.3%** (calories, small plates) |
 
 Plate size groups are terciles of true calories.
 
