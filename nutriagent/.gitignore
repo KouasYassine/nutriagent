@@ -1,0 +1,21 @@
+# Duplicate folder
+/nutriagent/
+
+# Temporary ZIP files
+*.zip
+
+# Model checkpoints
+*.pth
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+# Ignore duplicate NutriAgent folder
+/nutriagent/
+
+# Ignore ZIP archives
+*.zip

@@ -2,6 +2,7 @@
 from pathlib import Path
 from io import BytesIO
 import hashlib
+import json
 import sys
 
 import pandas as pd
@@ -13,10 +14,12 @@ from torchvision import transforms
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+
+from config import IMAGE_SIZE, IMAGENET_MEAN, IMAGENET_STD, RESULTS_DIR, TARGETS
 from model import MultiTaskResNet
 
-CHECKPOINT = ROOT / "best_multitask_resnet18_A2_mass2.pth"
-TARGETS = ["calories", "mass", "fat", "carbs", "protein"]
+CHECKPOINT = ROOT / "checkpoints" / "A2_Mass2.pth"
+CONFORMAL = RESULTS_DIR / "uncertainty" / "conformal.json"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 st.set_page_config(
@@ -43,13 +46,33 @@ def load_model():
     return model, ckpt
 
 
+@st.cache_resource
+def load_conformal():
+    """Interval parameters from src/uncertainty.py (None if not computed yet)."""
+    if not CONFORMAL.exists():
+        return None
+    return json.loads(CONFORMAL.read_text())
+
+
+def intervals(values):
+    """90 % conformal range for each nutrient, using the portion-scaled score."""
+    conf = load_conformal()
+    if conf is None:
+        return None
+    from uncertainty import interval
+
+    mode = conf["recommended_mode"]
+    out = {}
+    for t in TARGETS:
+        lo, hi = interval([values[t]], conf["quantiles"][mode][t], mode, conf["offsets"][t])
+        out[t] = (float(lo[0]), float(hi[0]))
+    return out
+
+
 transform = transforms.Compose([
-    transforms.Resize((224, 224)),
+    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
     transforms.ToTensor(),
-    transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],
-        std=[0.229, 0.224, 0.225]
-    )
+    transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)
 ])
 
 
@@ -98,18 +121,29 @@ def reference_estimate(mass, per_100g):
     return result
 
 
-def show_nutrition(values):
+def show_nutrition(values, ranges=None):
+    def help_text(t, unit, fmt):
+        if ranges is None:
+            return None
+        lo, hi = ranges[t]
+        return f"90% range: {lo:{fmt}} – {hi:{fmt}} {unit}"
+
     c1, c2 = st.columns(2)
     c1.metric("🔥 Calories", f"{values['calories']:.0f} kcal")
     c2.metric("⚖️ Mass", f"{values['mass']:.0f} g")
+    if ranges is not None:
+        c1.caption(help_text("calories", "kcal", ".0f"))
+        c2.caption(help_text("mass", "g", ".0f"))
 
     cols = st.columns(3)
     for col, target in zip(cols, ["fat", "carbs", "protein"]):
         col.metric(target.capitalize(), f"{values[target]:.1f} g")
+        if ranges is not None:
+            col.caption(help_text(target, "g", ".1f"))
 
 
 st.title("🥗 NutriAgent")
-st.write("AI-powered food nutrition estimation with optional refinement")
+st.write("Calories and macronutrients from a single food photo, with calibrated uncertainty ranges.")
 
 uploaded = st.file_uploader(
     "Upload a food photograph",
@@ -135,7 +169,14 @@ if uploaded is not None:
         original = st.session_state["prediction"]
 
         st.subheader("AI-only estimate")
-        show_nutrition(original)
+        ranges = intervals(original)
+        show_nutrition(original, ranges)
+        if ranges is not None:
+            st.caption(
+                "Ranges are conformal prediction intervals calibrated separately for "
+                "small, medium and large portions: on held-out Nutrition5k dishes, "
+                "the true value fell inside them about 90% of the time."
+            )
 
         st.divider()
         st.subheader("Optional refinement")
@@ -257,4 +298,4 @@ if uploaded is not None:
         )
 
 st.divider()
-st.caption("NutriAgent v2 · ResNet18 A2 Mass ×2 · PyTorch")
+st.caption("NutriAgent · multitask ResNet18 trained on Nutrition5k · conformal intervals · PyTorch")

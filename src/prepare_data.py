@@ -1,81 +1,58 @@
-from pathlib import Path
+"""Build data/processed/nutrition5k_labels.csv from the raw Nutrition5k download.
+
+Expected layout (Kaggle mirror or official release):
+    data/raw/nutrition5k/metadata/dish_metadata_cafe1.csv
+    data/raw/nutrition5k/metadata/dish_metadata_cafe2.csv
+    data/raw/nutrition5k/realsense_overhead/<dish_id>/rgb.png
+
+Run from the repo root:  python src/prepare_data.py
+"""
+import csv
+
 import pandas as pd
 
-DATA_ROOT = Path("data/raw/nutrition5k")
-IMAGE_DIR = DATA_ROOT / "realsense_overhead"
-METADATA_DIR = DATA_ROOT / "metadata"
-metadata_files = list(
-    METADATA_DIR.glob("dish_metadata_cafe*.csv")
-)
-
-frames = []
-
-for file in metadata_files:
-   import csv
-
-rows = []
-
-for file in metadata_files:
-    with open(file, "r", encoding="utf-8") as f:
-        reader = csv.reader(f)
-
-        for row in reader:
-            if len(row) < 6:
-                continue
-
-            rows.append({
-                "dish_id": row[0],
-                "calories": float(row[1]),
-                "mass": float(row[2]),
-                "fat": float(row[3]),
-                "carbs": float(row[4]),
-                "protein": float(row[5]),
-            })
-
-df = pd.DataFrame(rows)
+from config import LABELS_CSV, RAW_DIR, ROOT
 
 
-# -----------------------------
-# Find all RGB images
-# -----------------------------
+def read_dish_metadata(metadata_dir):
+    """Dish-level totals are the first 6 fields of each metadata row:
+    dish_id, total_calories, total_mass, total_fat, total_carb, total_protein.
+    The remaining fields are per-ingredient details, which we do not use.
+    """
+    rows = []
+    for file in sorted(metadata_dir.glob("dish_metadata_cafe*.csv")):
+        with open(file, "r", encoding="utf-8") as f:
+            for row in csv.reader(f):
+                if len(row) < 6:
+                    continue
+                rows.append({
+                    "dish_id": row[0],
+                    "calories": float(row[1]),
+                    "mass": float(row[2]),
+                    "fat": float(row[3]),
+                    "carbs": float(row[4]),
+                    "protein": float(row[5]),
+                })
+    return pd.DataFrame(rows).drop_duplicates("dish_id")
 
-image_paths = list(
-    IMAGE_DIR.glob("*/rgb.png")
-)
 
-print("RGB images found:", len(image_paths))
+def main():
+    labels = read_dish_metadata(RAW_DIR / "metadata")
+    print("Dishes with labels:", len(labels))
 
-image_map = {
-    path.parent.name: path
-    for path in image_paths
-}
+    image_paths = {p.parent.name: p for p in (RAW_DIR / "realsense_overhead").glob("*/rgb.png")}
+    print("Overhead RGB images found:", len(image_paths))
 
-# -----------------------------
-# Match images to labels
-# -----------------------------
+    labels["image_path"] = labels["dish_id"].map(image_paths)
+    labels = labels[labels["image_path"].notna()].copy()
+    # Store POSIX paths relative to the repo root so the CSV works on any OS.
+    labels["image_path"] = labels["image_path"].map(lambda p: p.relative_to(ROOT).as_posix())
+    print("Usable dishes (label + image):", len(labels))
 
-df["image_path"] = df["dish_id"].map(image_map)
+    LABELS_CSV.parent.mkdir(parents=True, exist_ok=True)
+    labels.to_csv(LABELS_CSV, index=False)
+    print("Saved", LABELS_CSV)
 
-df = df[df["image_path"].notna()].copy()
 
-print("Usable dishes:", len(df))
-
-# -----------------------------
-# Save processed dataframe
-# -----------------------------
-
-OUTPUT_PATH = Path(
-    "data/processed/nutrition5k_labels.csv"
-)
-
-OUTPUT_PATH.parent.mkdir(
-    parents=True,
-    exist_ok=True
-)
-
-df.to_csv(
-    OUTPUT_PATH,
-    index=False
-)
-
-print(f"Saved to {OUTPUT_PATH}")
+if __name__ == "__main__":
+    main()

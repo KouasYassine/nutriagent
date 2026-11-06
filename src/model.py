@@ -1,61 +1,40 @@
 import torch
 import torch.nn as nn
 from torchvision import models
-from torchvision.models import ResNet18_Weights
 
-
-class CalorieResNet(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.backbone = models.resnet18(weights=None)
-        self.in_features = self.backbone.fc.in_features
-        self.backbone.fc = nn.Linear(
-            self.in_features,
-            1
-        )
-
-    def forward(self, x):
-        return self.backbone(x)
+from config import TARGETS
 
 
 class MultiTaskResNet(nn.Module):
-    def __init__(self, pretrained=True):
+    """ResNet18 backbone -> shared 256-d layer -> one linear head per nutrient.
+
+    Attribute names are kept identical to the original experiments so older
+    checkpoints (A1, A1_Phase2, A2_Mass2) load with strict=True.
+    """
+
+    def __init__(self, pretrained: bool = True, dropout: float = 0.2):
         super().__init__()
-
-        backbone = models.resnet18(
-            weights=(
-                models.ResNet18_Weights.DEFAULT
-                if pretrained else None
-            )
-        )
-
+        backbone = models.resnet18(weights=models.ResNet18_Weights.DEFAULT if pretrained else None)
         n_features = backbone.fc.in_features
         backbone.fc = nn.Identity()
-
         self.backbone = backbone
 
-        self.shared = nn.Sequential(
-            nn.Linear(n_features, 256),
-            nn.ReLU(),
-            nn.Dropout(0.2)
-        )
-
+        self.shared = nn.Sequential(nn.Linear(n_features, 256), nn.ReLU(), nn.Dropout(dropout))
         self.calories_head = nn.Linear(256, 1)
         self.mass_head = nn.Linear(256, 1)
         self.fat_head = nn.Linear(256, 1)
         self.carbs_head = nn.Linear(256, 1)
         self.protein_head = nn.Linear(256, 1)
+
+    def heads(self):
+        return [getattr(self, f"{t}_head") for t in TARGETS]
+
+    def head_parameters(self):
+        params = list(self.shared.parameters())
+        for head in self.heads():
+            params += list(head.parameters())
+        return params
+
     def forward(self, x):
-        features = self.backbone(x)
-        shared_features = self.shared(features)
-
-        calories = self.calories_head(shared_features)
-        mass = self.mass_head(shared_features)
-        fat = self.fat_head(shared_features)
-        carbs = self.carbs_head(shared_features)
-        protein = self.protein_head(shared_features)
-
-        return torch.cat(
-            [calories, mass, fat, carbs, protein],
-            dim=1
-        )
+        h = self.shared(self.backbone(x))
+        return torch.cat([head(h) for head in self.heads()], dim=1)
