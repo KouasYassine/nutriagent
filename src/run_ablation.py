@@ -21,15 +21,18 @@ RUNS = {
     # name: (what changes, extra flags; each row includes the previous row's flags)
     "R1_recipe": ("full fine-tuning + cosine schedule, 30 epochs", []),
     "R2_log": ("+ log targets", ["--log-targets"]),
-    "R3_res384": ("+ 384px, 4:3 aspect kept", ["--log-targets", "--img-size", "384", "--keep-aspect"]),
-    "R4_aug": ("+ vertical flips, colour jitter", ["--log-targets", "--img-size", "384", "--keep-aspect", "--strong-aug"]),
+    # 384x512 images: batch 16 so it fits in 4 GB of GPU memory (RTX 3050 Laptop)
+    "R3_res384": ("+ 384px, 4:3 aspect kept",
+                  ["--log-targets", "--img-size", "384", "--keep-aspect", "--batch-size", "16"]),
+    "R4_aug": ("+ vertical flips, colour jitter",
+               ["--log-targets", "--img-size", "384", "--keep-aspect", "--batch-size", "16", "--strong-aug"]),
     "R5_physics": ("+ mass x density head, Atwater loss",
-                   ["--log-targets", "--img-size", "384", "--keep-aspect", "--strong-aug",
+                   ["--log-targets", "--img-size", "384", "--keep-aspect", "--batch-size", "16", "--strong-aug",
                     "--head", "density", "--atwater-weight", "0.1"]),
     "R6_convnext": ("R5 with ConvNeXt-Tiny backbone",
-                    ["--log-targets", "--img-size", "384", "--keep-aspect", "--strong-aug",
+                    ["--log-targets", "--img-size", "384", "--keep-aspect", "--batch-size", "8", "--strong-aug",
                      "--head", "density", "--atwater-weight", "0.1", "--backbone", "convnext_tiny",
-                     "--lr-backbone", "5e-5", "--batch-size", "16"]),
+                     "--lr-backbone", "5e-5"]),
 }
 
 

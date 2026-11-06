@@ -9,6 +9,7 @@ Rows for models evaluated again are replaced; other models are kept, so the
 files accumulate the full ablation. Then run src/report.py and src/uncertainty.py.
 """
 import argparse
+import os
 
 import numpy as np
 import pandas as pd
@@ -23,7 +24,7 @@ OUT_DIR = RESULTS_DIR / "evaluation"
 
 def predict_split(pred: Predictor, df, tta, batch_size):
     ds = NutritionDataset(df, pred.scaler, pred.transform)
-    loader = DataLoader(ds, batch_size=batch_size, num_workers=2)
+    loader = DataLoader(ds, batch_size=batch_size, num_workers=0 if os.name == "nt" else 2)
     return np.concatenate([pred.predict_batch(images, tta) for images, _ in loader])
 
 

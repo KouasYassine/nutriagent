@@ -16,6 +16,7 @@ calorie MAE only; the test split is never touched here.
 import argparse
 import json
 import math
+import os
 import random
 import time
 
@@ -64,7 +65,8 @@ def parse_args():
     p.add_argument("--atwater-weight", type=float, default=0.0,
                    help="penalty for calories != 4*protein + 4*carbs + 9*fat (0 = off)")
     p.add_argument("--batch-size", type=int, default=32)
-    p.add_argument("--num-workers", type=int, default=4)
+    # On Windows each DataLoader worker re-imports PyTorch (~50 s startup) for little gain.
+    p.add_argument("--num-workers", type=int, default=0 if os.name == "nt" else 4)
     p.add_argument("--no-amp", action="store_true", help="disable mixed precision")
     p.add_argument("--seed", type=int, default=SEED)
     args = p.parse_args()
