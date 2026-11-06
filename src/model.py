@@ -7,11 +7,7 @@ from torchvision.models import ResNet18_Weights
 class CalorieResNet(nn.Module):
     def __init__(self):
         super().__init__()
-
-        self.backbone = models.resnet18(
-            weights=ResNet18_Weights.DEFAULT
-        )
-
+        self.backbone = models.resnet18(weights=None)
         self.in_features = self.backbone.fc.in_features
         self.backbone.fc = nn.Linear(
             self.in_features,
@@ -23,11 +19,14 @@ class CalorieResNet(nn.Module):
 
 
 class MultiTaskResNet(nn.Module):
-    def __init__(self):
+    def __init__(self, pretrained=True):
         super().__init__()
 
         backbone = models.resnet18(
-            weights=models.ResNet18_Weights.DEFAULT
+            weights=(
+                models.ResNet18_Weights.DEFAULT
+                if pretrained else None
+            )
         )
 
         n_features = backbone.fc.in_features
@@ -46,7 +45,6 @@ class MultiTaskResNet(nn.Module):
         self.fat_head = nn.Linear(256, 1)
         self.carbs_head = nn.Linear(256, 1)
         self.protein_head = nn.Linear(256, 1)
-
     def forward(self, x):
         features = self.backbone(x)
         shared_features = self.shared(features)
