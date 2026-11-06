@@ -51,13 +51,14 @@ def main():
     p.add_argument("--tta", action="store_true", help="average predictions over flipped images")
     p.add_argument("--ensemble", help="also save the average of --models under this name")
     p.add_argument("--batch-size", type=int, default=32)
+    p.add_argument("--cache", action="store_true", help="read pre-resized JPEGs")
     args = p.parse_args()
 
     names = args.models or sorted(c.stem for c in CHECKPOINT_DIR.glob("*.pth"))
     if not names:
         raise SystemExit(f"No checkpoints found in {CHECKPOINT_DIR}")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    _, val_df, test_df = make_splits(load_labels())
+    _, val_df, test_df = make_splits(load_labels(use_cache=args.cache))
     frames, member_preds = {"val": [], "test": []}, {"val": [], "test": []}
 
     for name in names:

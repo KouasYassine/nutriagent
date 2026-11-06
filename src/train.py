@@ -51,6 +51,7 @@ def parse_args():
     p.add_argument("--keep-aspect", action="store_true", help="keep the 4:3 aspect ratio (no squashing)")
     p.add_argument("--strong-aug", action="store_true", help="vertical flips + colour jitter")
     p.add_argument("--log-targets", action="store_true", help="regress log1p of every nutrient")
+    p.add_argument("--cache", action="store_true", help="read pre-resized JPEGs (run src/cache_images.py once)")
     # optimisation
     p.add_argument("--init", help="start from checkpoints/<init>.pth")
     p.add_argument("--finetune", default="full", choices=["heads", "layer4", "full"])
@@ -160,7 +161,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Run {args.name} | device {device}\n{json.dumps(vars(args), indent=1)}")
 
-    train_df, val_df, _ = make_splits(load_labels())
+    train_df, val_df, _ = make_splits(load_labels(use_cache=args.cache))
     print(f"Train {len(train_df)} | Val {len(val_df)}")
 
     model = MultiTaskResNet(pretrained=args.init is None, backbone=args.backbone, head=args.head)

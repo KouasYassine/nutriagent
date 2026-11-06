@@ -5,7 +5,8 @@
     python src/run_ablation.py --only R2 R3
 
 Each run adds ONE change to the previous one, so the results table shows how
-much each change helps. Expect ~15-25 min per run on a recent GPU.
+much each change helps. Images are first resized once into data/cache/ (about
+1-2 min), which makes every epoch several times faster.
 """
 import argparse
 import subprocess
@@ -15,7 +16,7 @@ import pandas as pd
 
 from config import CHECKPOINT_DIR, RESULTS_DIR
 
-COMMON = ["--epochs", "30", "--finetune", "full"]
+COMMON = ["--epochs", "30", "--finetune", "full", "--cache"]
 RUNS = {
     # name: (what changes, extra flags; each row includes the previous row's flags)
     "R1_recipe": ("full fine-tuning + cosine schedule, 30 epochs", []),
@@ -43,6 +44,7 @@ def main():
     p.add_argument("--quick", action="store_true", help="1 epoch per run, names prefixed with quick_")
     args = p.parse_args()
 
+    run(["src/cache_images.py"])  # no-op if the cache already exists
     names = []
     for name, (desc, flags) in RUNS.items():
         if args.only and name.split("_")[0] not in args.only:
@@ -53,10 +55,10 @@ def main():
             print(f"skip {run_name} (checkpoint exists)")
             continue
         print(f"\n=== {run_name}: {desc}")
-        common = ["--epochs", "1", "--finetune", "full"] if args.quick else COMMON
+        common = ["--epochs", "1", "--finetune", "full", "--cache"] if args.quick else COMMON
         run(["src/train.py", "--name", run_name, *common, *flags])
 
-    run(["src/evaluate.py", "--models", *names, "--tta"])
+    run(["src/evaluate.py", "--models", *names, "--tta", "--cache"])
     if args.quick:  # smoke test only: remove its checkpoints and prediction rows
         for name in names:
             (CHECKPOINT_DIR / f"{name}.pth").unlink(missing_ok=True)
