@@ -2,7 +2,7 @@
 
     python src/report.py
 
-Reads results/evaluation/predictions_test.csv and writes
+Reads results/evaluation/predictions_{val,test}.csv and writes
     results/evaluation/metrics.csv        MAE / RMSE / %MAE per model and nutrient
     results/evaluation/metrics.md         the same table, ready for the README
     results/evaluation/pred_vs_true.png   predicted vs true, best model
@@ -38,20 +38,33 @@ def main():
         rows.append(metrics_for(name, y_true, y_pred))
 
     table = pd.DataFrame(rows)
+
+    # Validation calorie MAE: the ONLY number used to choose the best model.
+    val_path = EVAL_DIR / "predictions_val.csv"
+    table["val_calories_MAE"] = np.nan
+    if val_path.exists():
+        val = pd.read_csv(val_path)
+        for name, df in val.groupby("model", sort=False):
+            mae = (df["calories_predicted"].clip(lower=0) - df["calories_actual"]).abs().mean()
+            table.loc[table["model"] == name, "val_calories_MAE"] = mae
     table.to_csv(EVAL_DIR / "metrics.csv", index=False)
 
-    header = "| Model | " + " | ".join(f"{t.capitalize()} ({UNITS[t]})" for t in TARGETS) + " |"
-    lines = [header, "|" + "---|" * (len(TARGETS) + 1)]
+    header = ("| Model | Val calories (kcal) | " + " | ".join(f"Test {t} ({UNITS[t]})" for t in TARGETS) + " |")
+    lines = [header, "|" + "---|" * (len(TARGETS) + 2)]
     for _, r in table.iterrows():
+        val_cell = "–" if np.isnan(r["val_calories_MAE"]) else f"{r['val_calories_MAE']:.1f}"
         cells = [f"{r[f'{t}_MAE']:.1f} ({r[f'{t}_pctMAE']:.0f}%)" for t in TARGETS]
-        lines.append(f"| {r['model']} | " + " | ".join(cells) + " |")
+        lines.append(f"| {r['model']} | {val_cell} | " + " | ".join(cells) + " |")
     md = "\n".join(lines)
-    (EVAL_DIR / "metrics.md").write_text(md + "\n\nTest-set MAE, with MAE as % of the mean true value in brackets.\n")
+    (EVAL_DIR / "metrics.md").write_text(md + "\n\nMAE, with MAE as % of the mean true value in brackets. "
+                                          "The best model is chosen on the validation column only.\n")
     print(md)
 
-    best = table.iloc[1:].sort_values("calories_MAE").iloc[0]["model"]
+    candidates = table.iloc[1:]
+    key = "val_calories_MAE" if candidates["val_calories_MAE"].notna().any() else "calories_MAE"
+    best = candidates.sort_values(key).iloc[0]["model"]
     base = table.iloc[0]["calories_MAE"]
-    print(f"\nBest model: {best} | calorie MAE {table.set_index('model').loc[best, 'calories_MAE']:.1f} kcal "
+    print(f"\nBest model (chosen on validation): {best} | test calorie MAE {table.set_index('model').loc[best, 'calories_MAE']:.1f} kcal "
           f"vs {base:.1f} kcal for the mean baseline")
     plot(preds[preds["model"] == best], best)
 

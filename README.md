@@ -43,6 +43,31 @@ Plate size groups are terciles of true calories.
   - portion-scaled ranges are too narrow for near-empty plates (78% coverage).
 - **Mondrian conformal prediction** calibrates small, medium and large *predicted* portions separately. This guarantees 90% coverage within each group, not only on average, so it is the method the app uses.
 
+## Improving accuracy: ablation
+
+Each run adds **one** change to the previous run. Every model is selected on validation calorie MAE and then measured once on the test set, with flip test-time augmentation.
+
+| Run | Change | Val calories (kcal) | Test calories (kcal) | Test mass (g) |
+|---|---|---|---|---|
+| A2_Mass2 | original model: `layer4` fine-tuned, 224px | 58.5 | 66.1 | 37.0 |
+| R1_recipe | full fine-tuning + cosine schedule, 30 epochs | | | |
+| R2_log | + regress log(nutrient): targets are heavily right-skewed | | | |
+| R3_res384 | + 384px input, 4:3 aspect ratio kept (no squashing) | | | |
+| R4_aug | + vertical flips, colour jitter | | | |
+| R5_physics | + mass × density head, Atwater consistency loss | | | |
+| R6_convnext | R5 with a ConvNeXt-Tiny backbone | | | |
+
+**Why each change:**
+- **Log targets:** carbs have skewness 17.0 in raw units and 0.7 after log. In raw units, a handful of 1,000+ kcal plates dominate the loss.
+- **Aspect ratio and resolution:** the camera height is fixed, so the apparent size of the food is the portion-size signal. For the same reason there are **no random crops or zooms**: they would change the apparent portion without changing the label.
+- **Mass × density head:** totals = portion mass × nutrient content per gram. This separates "how much food" from "what food".
+- **Atwater loss:** calories ≈ 4·protein + 4·carbs + 9·fat holds on the labels (correlation 0.992, 12.6 kcal average gap). A soft penalty keeps the 5 outputs consistent with each other.
+
+```bash
+python src/run_ablation.py --quick   # 1-epoch smoke test of every option (about 5 min)
+python src/run_ablation.py           # full ablation, then evaluation + report
+```
+
 ## How it works
 
 ```
@@ -98,8 +123,10 @@ src/config.py        paths, target order, the single train/val/test split
 src/prepare_data.py  raw Nutrition5k -> labels CSV
 src/data.py          dataset, transforms, target normalisation
 src/model.py         multitask ResNet18
-src/train.py         3-stage training (A1 -> A1_Phase2 -> A2_Mass2)
+src/train.py         original 3 stages + configurable new runs (backbone, resolution, log targets, physics head)
+src/inference.py     load any checkpoint, flip TTA, ensembles
 src/evaluate.py      predictions for val and test (needs PyTorch)
+src/run_ablation.py  runs the whole ablation table
 src/report.py        metrics table + figures (CPU only)
 src/uncertainty.py   split conformal prediction intervals (CPU only)
 app/app.py           Streamlit demo

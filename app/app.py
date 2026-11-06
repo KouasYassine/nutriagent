@@ -7,43 +7,23 @@ import sys
 
 import pandas as pd
 import streamlit as st
-import torch
 from PIL import Image
-from torchvision import transforms
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 
-from config import IMAGE_SIZE, IMAGENET_MEAN, IMAGENET_STD, RESULTS_DIR, TARGETS
-from model import MultiTaskResNet
+from config import RESULTS_DIR, TARGETS
+from inference import Ensemble, Predictor
 
-CHECKPOINT = ROOT / "checkpoints" / "A2_Mass2.pth"
 CONFORMAL = RESULTS_DIR / "uncertainty" / "conformal.json"
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEFAULT_MODEL = "A2_Mass2"
 
 st.set_page_config(
-    page_title="NutriAgent v2",
+    page_title="NutriAgent",
     page_icon="🥗",
     layout="wide"
 )
-
-@st.cache_resource
-def load_model():
-    ckpt = torch.load(
-        CHECKPOINT,
-        map_location="cpu",
-        weights_only=True
-    )
-
-    if list(ckpt["target_cols"]) != TARGETS:
-        raise ValueError("Checkpoint target order mismatch")
-
-    model = MultiTaskResNet(pretrained=False)
-    model.load_state_dict(ckpt["model_state_dict"], strict=True)
-    model.to(DEVICE)
-    model.eval()
-    return model, ckpt
 
 
 @st.cache_resource
@@ -54,8 +34,25 @@ def load_conformal():
     return json.loads(CONFORMAL.read_text())
 
 
+@st.cache_resource
+def load_predictor():
+    """Use the model the intervals were calibrated for, so the ranges stay valid.
+    Names: "v3_full", "v3_full+tta" (flip averaging) or an ensemble saved by evaluate.py."""
+    conf = load_conformal()
+    name = conf["model"] if conf else DEFAULT_MODEL
+    tta = name.endswith("+tta")
+    base = name.removesuffix("+tta")
+    members_file = RESULTS_DIR / "evaluation" / f"{base}.members.txt"
+    if members_file.exists():
+        predictor = Ensemble(members_file.read_text().split())
+        tta = True
+    else:
+        predictor = Predictor(base)
+    return predictor, tta, name
+
+
 def intervals(values):
-    """90 % conformal range for each nutrient, using the portion-scaled score."""
+    """90 % conformal range for each nutrient."""
     conf = load_conformal()
     if conf is None:
         return None
@@ -69,30 +66,10 @@ def intervals(values):
     return out
 
 
-transform = transforms.Compose([
-    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)
-])
-
-
 def predict(image):
-    model, ckpt = load_model()
-    tensor = transform(image).unsqueeze(0).to(DEVICE)
-
-    with torch.inference_mode():
-        output = model(tensor)[0].cpu().numpy()
-
-    return {
-        target: max(
-            0.0,
-            float(
-                output[i] * ckpt["target_std"][target]
-                + ckpt["target_mean"][target]
-            )
-        )
-        for i, target in enumerate(TARGETS)
-    }
+    predictor, tta, _ = load_predictor()
+    values = predictor.predict_image(image, tta=tta)
+    return {t: float(v) for t, v in zip(TARGETS, values)}
 
 
 def scale_portion(predictions, actual_mass):
@@ -298,4 +275,4 @@ if uploaded is not None:
         )
 
 st.divider()
-st.caption("NutriAgent · multitask ResNet18 trained on Nutrition5k · conformal intervals · PyTorch")
+st.caption(f"NutriAgent · model: {load_predictor()[2]} · trained on Nutrition5k · conformal intervals · PyTorch")
